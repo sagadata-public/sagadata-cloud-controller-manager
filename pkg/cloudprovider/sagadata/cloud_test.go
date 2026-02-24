@@ -17,8 +17,8 @@ func TestProviderRegistered(t *testing.T) {
 	if cloud.ProviderName() != ProviderName {
 		t.Errorf("ProviderName() = %q, want %q", cloud.ProviderName(), ProviderName)
 	}
-	if cloud.HasClusterID() {
-		t.Error("HasClusterID() = true, want false for minimal impl")
+	if !cloud.HasClusterID() {
+		t.Error("HasClusterID() = false, want true")
 	}
 	if _, ok := cloud.LoadBalancer(); ok {
 		t.Error("LoadBalancer() supported, want unsupported")

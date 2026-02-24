@@ -70,7 +70,7 @@ func (c *cloud) ProviderName() string {
 	return ProviderName
 }
 
-// HasClusterID returns true if a ClusterID is required. Minimal implementation returns false.
+// HasClusterID returns true if a ClusterID is required.
 func (c *cloud) HasClusterID() bool {
-	return false
+	return true
 }

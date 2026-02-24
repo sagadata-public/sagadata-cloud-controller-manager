@@ -5,10 +5,11 @@ package main
 
 import (
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/sagadata-public/sagadata-cloud-controller-manager/pkg/cloudprovider/sagadata"
 
-	"k8s.io/apimachinery/pkg/util/wait"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/app"
 	cloudcontrollerconfig "k8s.io/cloud-provider/app/config"
@@ -30,8 +31,16 @@ func main() {
 	// Default to sagadata cloud provider so users can omit --cloud-provider=sagadata
 	ccmOptions.KubeCloudShared.CloudProvider.Name = sagadata.ProviderName
 
+	stopCh := make(chan struct{})
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sig
+		close(stopCh)
+	}()
+
 	fss := cliflag.NamedFlagSets{}
-	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, app.DefaultInitFuncConstructors, names.CCMControllerAliases(), fss, wait.NeverStop)
+	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, app.DefaultInitFuncConstructors, names.CCMControllerAliases(), fss, stopCh)
 	code := cli.Run(command)
 	os.Exit(code)
 }

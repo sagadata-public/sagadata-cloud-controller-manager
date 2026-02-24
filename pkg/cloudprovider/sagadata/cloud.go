@@ -20,8 +20,9 @@ const (
 
 // cloud implements cloudprovider.Interface
 type cloud struct {
-	instances cloudprovider.Instances
-	lbs       cloudprovider.LoadBalancer
+	instances   cloudprovider.Instances
+	instancesV2 cloudprovider.InstancesV2
+	lbs         cloudprovider.LoadBalancer
 }
 
 // newCloud returns a new cloudprovider.Interface for Saga Data.
@@ -60,6 +61,10 @@ func newCloud(config io.Reader) (cloudprovider.Interface, error) {
 		return nil, err
 	}
 	c.instances = i
+	c.instancesV2 = &instancesV2{
+		instances: instances{client: client},
+		region:    region,
+	}
 	c.lbs = &loadBalancers{
 		client:  client,
 		region:  sagadata.Region(region),
@@ -89,9 +94,9 @@ func (c *cloud) Instances() (cloudprovider.Instances, bool) {
 	return c.instances, true
 }
 
-// InstancesV2 returns an instances interface. Not supported in the minimal implementation.
+// InstancesV2 returns the InstancesV2 interface.
 func (c *cloud) InstancesV2() (cloudprovider.InstancesV2, bool) {
-	return nil, false
+	return c.instancesV2, true
 }
 
 // Zones returns a zones interface. Not supported in the minimal implementation.

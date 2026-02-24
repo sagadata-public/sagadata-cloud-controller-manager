@@ -252,3 +252,69 @@ func (i *instances) InstanceShutdownByProviderID(ctx context.Context, providerID
 func NewInstances(client *sagadata.ClientWithResponses) (cloudprovider.Instances, error) {
 	return &instances{client: client}, nil
 }
+
+type instancesV2 struct {
+	instances
+	region string
+}
+
+// getInstance resolves the sagadata instance from a node, preferring providerID
+// over node name lookup.
+func (i *instancesV2) getInstance(ctx context.Context, node *v1.Node) (*sagadata.Instance, error) {
+	if node.Spec.ProviderID != "" {
+		instanceID, err := parseProviderID(node.Spec.ProviderID)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := i.client.GetInstanceWithResponse(ctx, instanceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instance: %w", err)
+		}
+		if resp.StatusCode() == http.StatusNotFound {
+			return nil, cloudprovider.InstanceNotFound
+		}
+		if resp.JSON200 == nil {
+			return nil, fmt.Errorf("unexpected response: %s", resp.Status())
+		}
+		return &resp.JSON200.Instance, nil
+	}
+	return i.instanceByNodeName(ctx, types.NodeName(node.Name))
+}
+
+func (i *instancesV2) InstanceExists(ctx context.Context, node *v1.Node) (bool, error) {
+	_, err := i.getInstance(ctx, node)
+	if err == cloudprovider.InstanceNotFound {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (i *instancesV2) InstanceShutdown(ctx context.Context, node *v1.Node) (bool, error) {
+	inst, err := i.getInstance(ctx, node)
+	if err != nil {
+		return false, err
+	}
+	return inst.Status == sagadata.InstanceStatusStopped, nil
+}
+
+func (i *instancesV2) InstanceMetadata(ctx context.Context, node *v1.Node) (*cloudprovider.InstanceMetadata, error) {
+	inst, err := i.getInstance(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+
+	addresses, err := i.nodeAddresses(ctx, inst)
+	if err != nil {
+		return nil, err
+	}
+
+	return &cloudprovider.InstanceMetadata{
+		ProviderID:    providerIDPrefix + inst.Id,
+		InstanceType:  inst.Type,
+		NodeAddresses: addresses,
+		Region:        i.region,
+	}, nil
+}

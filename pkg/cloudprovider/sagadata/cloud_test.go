@@ -43,8 +43,8 @@ func TestProviderRegistered(t *testing.T) {
 	if _, ok := cloud.Instances(); !ok {
 		t.Error("Instances() not supported, want supported")
 	}
-	if _, ok := cloud.InstancesV2(); ok {
-		t.Error("InstancesV2() supported, want unsupported")
+	if _, ok := cloud.InstancesV2(); !ok {
+		t.Error("InstancesV2() not supported, want supported")
 	}
 	if _, ok := cloud.Zones(); ok {
 		t.Error("Zones() supported, want unsupported")

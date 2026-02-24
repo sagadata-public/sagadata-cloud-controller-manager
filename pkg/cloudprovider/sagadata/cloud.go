@@ -4,8 +4,11 @@
 package sagadata
 
 import (
+	"fmt"
 	"io"
+	"os"
 
+	sagadata "github.com/sagadata-public/sagadata-go"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
 )
@@ -16,11 +19,37 @@ const (
 )
 
 // cloud implements cloudprovider.Interface
-type cloud struct{}
+type cloud struct {
+	instances cloudprovider.Instances
+}
 
 // newCloud returns a new cloudprovider.Interface for Saga Data.
 func newCloud(config io.Reader) (cloudprovider.Interface, error) {
-	return &cloud{}, nil
+	endpoint := os.Getenv("ENDPOINT")
+	if endpoint == "" {
+		return nil, fmt.Errorf("ENDPOINT environment variable not set")
+	}
+
+	tokenFile := os.Getenv("TOKEN_FILE")
+	if tokenFile == "" {
+		return nil, fmt.Errorf("TOKEN_FILE environment variable not set")
+	}
+
+	client, err := sagadata.NewSagaDataClient(sagadata.ClientConfig{
+		Endpoint:  endpoint,
+		TokenFile: tokenFile,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sagadata client: %w", err)
+	}
+
+	c := &cloud{}
+	i, err := NewInstances(client)
+	if err != nil {
+		return nil, err
+	}
+	c.instances = i
+	return c, nil
 }
 
 func init() {
@@ -41,7 +70,7 @@ func (c *cloud) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
 
 // Instances returns an instances interface. Not supported in the minimal implementation.
 func (c *cloud) Instances() (cloudprovider.Instances, bool) {
-	return nil, false
+	return c.instances, true
 }
 
 // InstancesV2 returns an instances interface. Not supported in the minimal implementation.

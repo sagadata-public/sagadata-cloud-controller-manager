@@ -15,11 +15,10 @@ const (
 	ProviderName = "sagadata"
 )
 
-// cloud implements cloudprovider.Interface with a minimal "do nothing" implementation.
+// cloud implements cloudprovider.Interface
 type cloud struct{}
 
 // newCloud returns a new cloudprovider.Interface for Saga Data.
-// For the minimal version, config is ignored.
 func newCloud(config io.Reader) (cloudprovider.Interface, error) {
 	return &cloud{}, nil
 }
@@ -30,9 +29,9 @@ func init() {
 	})
 }
 
-// Initialize provides the cloud with a kubernetes client builder. No-op for the minimal implementation.
+// Initialize provides the cloud with a kubernetes client builder.
 func (c *cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
-	klog.Info("Sagadata cloud provider initialized (minimal implementation)")
+	klog.Info("Sagadata cloud provider initialized")
 }
 
 // LoadBalancer returns a balancer interface. Not supported in the minimal implementation.

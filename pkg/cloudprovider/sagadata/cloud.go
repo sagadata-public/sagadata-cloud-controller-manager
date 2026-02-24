@@ -4,8 +4,11 @@
 package sagadata
 
 import (
+	"fmt"
 	"io"
+	"os"
 
+	sagadata "github.com/sagadata-public/sagadata-go"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
 )
@@ -15,13 +18,38 @@ const (
 	ProviderName = "sagadata"
 )
 
-// cloud implements cloudprovider.Interface with a minimal "do nothing" implementation.
-type cloud struct{}
+// cloud implements cloudprovider.Interface
+type cloud struct {
+	instances cloudprovider.Instances
+}
 
 // newCloud returns a new cloudprovider.Interface for Saga Data.
-// For the minimal version, config is ignored.
 func newCloud(config io.Reader) (cloudprovider.Interface, error) {
-	return &cloud{}, nil
+	endpoint := os.Getenv("ENDPOINT")
+	if endpoint == "" {
+		return nil, fmt.Errorf("ENDPOINT environment variable not set")
+	}
+
+	tokenFile := os.Getenv("TOKEN_FILE")
+	if tokenFile == "" {
+		return nil, fmt.Errorf("TOKEN_FILE environment variable not set")
+	}
+
+	client, err := sagadata.NewSagaDataClient(sagadata.ClientConfig{
+		Endpoint:  endpoint,
+		TokenFile: tokenFile,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sagadata client: %w", err)
+	}
+
+	c := &cloud{}
+	i, err := NewInstances(client)
+	if err != nil {
+		return nil, err
+	}
+	c.instances = i
+	return c, nil
 }
 
 func init() {
@@ -30,9 +58,9 @@ func init() {
 	})
 }
 
-// Initialize provides the cloud with a kubernetes client builder. No-op for the minimal implementation.
+// Initialize provides the cloud with a kubernetes client builder.
 func (c *cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
-	klog.Info("Sagadata cloud provider initialized (minimal implementation)")
+	klog.Info("Sagadata cloud provider initialized")
 }
 
 // LoadBalancer returns a balancer interface. Not supported in the minimal implementation.
@@ -42,7 +70,7 @@ func (c *cloud) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
 
 // Instances returns an instances interface. Not supported in the minimal implementation.
 func (c *cloud) Instances() (cloudprovider.Instances, bool) {
-	return nil, false
+	return c.instances, true
 }
 
 // InstancesV2 returns an instances interface. Not supported in the minimal implementation.
@@ -70,7 +98,7 @@ func (c *cloud) ProviderName() string {
 	return ProviderName
 }
 
-// HasClusterID returns true if a ClusterID is required. Minimal implementation returns false.
+// HasClusterID returns true if a ClusterID is required.
 func (c *cloud) HasClusterID() bool {
-	return false
+	return true
 }

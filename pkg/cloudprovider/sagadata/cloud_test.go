@@ -4,12 +4,27 @@
 package sagadata
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	cloudprovider "k8s.io/cloud-provider"
 )
 
 func TestProviderRegistered(t *testing.T) {
+	srv := httptest.NewServer(http.NewServeMux())
+	t.Cleanup(srv.Close)
+
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("test-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("ENDPOINT", srv.URL)
+	t.Setenv("TOKEN_FILE", tokenFile)
+
 	cloud, err := newCloud(nil)
 	if err != nil {
 		t.Fatalf("newCloud: %v", err)
@@ -17,14 +32,14 @@ func TestProviderRegistered(t *testing.T) {
 	if cloud.ProviderName() != ProviderName {
 		t.Errorf("ProviderName() = %q, want %q", cloud.ProviderName(), ProviderName)
 	}
-	if cloud.HasClusterID() {
-		t.Error("HasClusterID() = true, want false for minimal impl")
+	if !cloud.HasClusterID() {
+		t.Error("HasClusterID() = false, want true")
 	}
 	if _, ok := cloud.LoadBalancer(); ok {
 		t.Error("LoadBalancer() supported, want unsupported")
 	}
-	if _, ok := cloud.Instances(); ok {
-		t.Error("Instances() supported, want unsupported")
+	if _, ok := cloud.Instances(); !ok {
+		t.Error("Instances() not supported, want supported")
 	}
 	if _, ok := cloud.InstancesV2(); ok {
 		t.Error("InstancesV2() supported, want unsupported")

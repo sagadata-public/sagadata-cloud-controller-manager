@@ -24,6 +24,8 @@ func TestProviderRegistered(t *testing.T) {
 
 	t.Setenv("ENDPOINT", srv.URL)
 	t.Setenv("TOKEN_FILE", tokenFile)
+	t.Setenv("REGION", "NORD-NO-KRS-1")
+	t.Setenv("NETWORK", "test-network")
 
 	cloud, err := newCloud(nil)
 	if err != nil {
@@ -35,8 +37,8 @@ func TestProviderRegistered(t *testing.T) {
 	if !cloud.HasClusterID() {
 		t.Error("HasClusterID() = false, want true")
 	}
-	if _, ok := cloud.LoadBalancer(); ok {
-		t.Error("LoadBalancer() supported, want unsupported")
+	if _, ok := cloud.LoadBalancer(); !ok {
+		t.Error("LoadBalancer() not supported, want supported")
 	}
 	if _, ok := cloud.Instances(); !ok {
 		t.Error("Instances() not supported, want supported")

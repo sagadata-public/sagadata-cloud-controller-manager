@@ -21,6 +21,7 @@ const (
 // cloud implements cloudprovider.Interface
 type cloud struct {
 	instances cloudprovider.Instances
+	lbs       cloudprovider.LoadBalancer
 }
 
 // newCloud returns a new cloudprovider.Interface for Saga Data.
@@ -33,6 +34,16 @@ func newCloud(config io.Reader) (cloudprovider.Interface, error) {
 	tokenFile := os.Getenv("TOKEN_FILE")
 	if tokenFile == "" {
 		return nil, fmt.Errorf("TOKEN_FILE environment variable not set")
+	}
+
+	region := os.Getenv("REGION")
+	if region == "" {
+		return nil, fmt.Errorf("REGION environment variable not set")
+	}
+
+	network := os.Getenv("NETWORK")
+	if network == "" {
+		return nil, fmt.Errorf("NETWORK environment variable not set")
 	}
 
 	client, err := sagadata.NewSagaDataClient(sagadata.ClientConfig{
@@ -49,6 +60,11 @@ func newCloud(config io.Reader) (cloudprovider.Interface, error) {
 		return nil, err
 	}
 	c.instances = i
+	c.lbs = &loadBalancers{
+		client:  client,
+		region:  sagadata.Region(region),
+		network: network,
+	}
 	return c, nil
 }
 
@@ -63,9 +79,9 @@ func (c *cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, 
 	klog.Info("Sagadata cloud provider initialized")
 }
 
-// LoadBalancer returns a balancer interface. Not supported in the minimal implementation.
+// LoadBalancer returns a balancer interface.
 func (c *cloud) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
-	return nil, false
+	return c.lbs, true
 }
 
 // Instances returns an instances interface. Not supported in the minimal implementation.

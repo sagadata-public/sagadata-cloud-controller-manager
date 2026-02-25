@@ -3,7 +3,7 @@ module github.com/sagadata-public/sagadata-cloud-controller-manager
 go 1.24.5
 
 require (
-	github.com/sagadata-public/sagadata-go v1.2.0
+	github.com/sagadata-public/sagadata-go v1.3.0
 	k8s.io/api v0.31.0
 	k8s.io/apimachinery v0.31.0
 	k8s.io/cloud-provider v0.31.0

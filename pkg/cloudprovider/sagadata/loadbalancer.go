@@ -14,13 +14,23 @@ import (
 
 	sagadata "github.com/sagadata-public/sagadata-go"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 )
 
+const (
+	// AnnotationLoadBalancerName is written back to the Service so that
+	// cluster admins can see which Saga Data load balancer backs it.
+	AnnotationLoadBalancerName = "sagadata.no/loadbalancer-name"
+)
+
 type loadBalancers struct {
-	client  *sagadata.ClientWithResponses
-	region  sagadata.Region
-	network string
+	client     *sagadata.ClientWithResponses
+	kubeClient kubernetes.Interface
+	region     sagadata.Region
+	network    string
 }
 
 func lbName(svc *v1.Service) string {
@@ -108,6 +118,10 @@ func (lb *loadBalancers) GetLoadBalancerName(ctx context.Context, clusterName st
 func (lb *loadBalancers) EnsureLoadBalancer(ctx context.Context, clusterName string, svc *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
 	name := lbName(svc)
 	ports := buildPorts(svc, nodes)
+
+	if err := lb.annotateService(ctx, svc, name); err != nil {
+		klog.Warningf("failed to annotate service %s/%s with load balancer name: %v", svc.Namespace, svc.Name, err)
+	}
 
 	found, err := lb.lbByName(ctx, name)
 	if err != nil {
@@ -236,4 +250,16 @@ func (lb *loadBalancers) EnsureLoadBalancerDeleted(ctx context.Context, clusterN
 		return fmt.Errorf("error deleting load balancer: %s", resp.HTTPResponse.Status)
 	}
 	return nil
+}
+
+// annotateService patches the Service with the LB name annotation if not already set.
+func (lb *loadBalancers) annotateService(ctx context.Context, svc *v1.Service, name string) error {
+	if svc.Annotations[AnnotationLoadBalancerName] == name {
+		return nil
+	}
+	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, AnnotationLoadBalancerName, name)
+	_, err := lb.kubeClient.CoreV1().Services(svc.Namespace).Patch(
+		ctx, svc.Name, types.MergePatchType, []byte(patch), metav1.PatchOptions{},
+	)
+	return err
 }

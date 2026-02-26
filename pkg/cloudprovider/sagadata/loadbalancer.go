@@ -70,7 +70,7 @@ func (lb *loadBalancers) lbByName(ctx context.Context, name string) (*sagadata.L
 }
 
 func buildPorts(svc *v1.Service, nodes []*v1.Node) []sagadata.LoadbalancerPort {
-	var targets []string
+	targets := []string{}
 	for _, n := range nodes {
 		for _, addr := range n.Status.Addresses {
 			if addr.Type == v1.NodeInternalIP {

@@ -81,6 +81,8 @@ func init() {
 
 // Initialize provides the cloud with a kubernetes client builder.
 func (c *cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
+	clientSet := clientBuilder.ClientOrDie("sagadata-cloud-controller-manager")
+	c.lbs.(*loadBalancers).kubeClient = clientSet
 	klog.Info("Sagadata cloud provider initialized")
 }
 

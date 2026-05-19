@@ -24,6 +24,11 @@ const (
 	// AnnotationLoadBalancerName is written back to the Service so that
 	// cluster admins can see which Saga Data load balancer backs it.
 	AnnotationLoadBalancerName = "sagadata.no/loadbalancer-name"
+
+	// AnnotationLoadBalancerFloatingIp can be set on a Service to request that
+	// the named floating IP is used as the external IP of the load balancer.
+	// If absent, an ephemeral IP is allocated (the default behaviour).
+	AnnotationLoadBalancerFloatingIp = "epilayer.io/floating-ip"
 )
 
 type loadBalancers struct {
@@ -136,6 +141,9 @@ func (lb *loadBalancers) EnsureLoadBalancer(ctx context.Context, clusterName str
 			Region:  lb.region,
 			Network: lb.network,
 			Ports:   ports,
+		}
+		if floatingIp, ok := svc.Annotations[AnnotationLoadBalancerFloatingIp]; ok {
+			createBody.FloatingIpId = &floatingIp
 		}
 		if bodyJSON, err := json.Marshal(createBody); err == nil {
 			klog.Infof("creating load balancer %q, request body: %s", name, string(bodyJSON))

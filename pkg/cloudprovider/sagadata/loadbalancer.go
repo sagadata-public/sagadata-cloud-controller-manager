@@ -25,10 +25,17 @@ const (
 	// cluster admins can see which Saga Data load balancer backs it.
 	AnnotationLoadBalancerName = "sagadata.no/loadbalancer-name"
 
-	// AnnotationLoadBalancerFloatingIp can be set on a Service to request that
-	// the named floating IP is used as the external IP of the load balancer.
+	// AnnotationLoadBalancerFloatingIp can be set on a Service to pin the load
+	// balancer to a specific floating IP by ID. The floating IP must already exist.
 	// If absent, an ephemeral IP is allocated (the default behaviour).
 	AnnotationLoadBalancerFloatingIp = "epilayer.io/floating-ip"
+
+	// AnnotationLoadBalancerFloatingIpName can be set on a Service to pin the load
+	// balancer to a floating IP identified by name. The floating IP is created
+	// automatically if it does not exist yet, and is never deleted when the Service
+	// is removed, so the same IP is reused if the Service is recreated with the
+	// same annotation value.
+	AnnotationLoadBalancerFloatingIpName = "epilayer.io/floating-ip-name"
 )
 
 type loadBalancers struct {
@@ -96,6 +103,88 @@ func buildPorts(svc *v1.Service, nodes []*v1.Node) []sagadata.LoadbalancerPort {
 	return ports
 }
 
+// floatingIPByName returns the floating IP with the given name, or nil if not found.
+func (lb *loadBalancers) floatingIPByName(ctx context.Context, name string) (*sagadata.FloatingIP, error) {
+	page := 1
+	for {
+		resp, err := lb.client.ListFloatingIPsPaginatedWithResponse(ctx, &sagadata.ListFloatingIPsPaginatedParams{
+			Page: &page,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list floating IPs: %w", err)
+		}
+		if resp.JSON200 == nil {
+			return nil, fmt.Errorf("unexpected response listing floating IPs: %s", resp.HTTPResponse.Status)
+		}
+		for idx := range resp.JSON200.FloatingIps {
+			if resp.JSON200.FloatingIps[idx].Name == name {
+				return &resp.JSON200.FloatingIps[idx], nil
+			}
+		}
+		if page*resp.JSON200.PerPage >= resp.JSON200.TotalCount {
+			break
+		}
+		page++
+	}
+	return nil, nil
+}
+
+// ensureFloatingIP resolves the floating IP ID to use for the given service.
+// If epilayer.io/floating-ip-name is set, the floating IP is looked up by name
+// and created if it does not exist yet; it is never deleted on Service removal.
+// If epilayer.io/floating-ip is set, that ID is used directly.
+// Otherwise an empty string is returned (ephemeral IP behaviour).
+func (lb *loadBalancers) ensureFloatingIP(ctx context.Context, svc *v1.Service) (string, error) {
+	name, hasName := svc.Annotations[AnnotationLoadBalancerFloatingIpName]
+	if !hasName {
+		return svc.Annotations[AnnotationLoadBalancerFloatingIp], nil
+	}
+
+	fip, err := lb.floatingIPByName(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	if fip == nil {
+		klog.Infof("floating IP %q not found, creating", name)
+		resp, err := lb.client.CreateFloatingIPWithResponse(ctx, sagadata.CreateFloatingIPJSONRequestBody{
+			Name:   name,
+			Region: lb.region,
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to create floating IP %q: %w", name, err)
+		}
+		if resp.JSON201 == nil {
+			return "", fmt.Errorf("unexpected response creating floating IP %q: %s, body: %s", name, resp.HTTPResponse.Status, string(resp.Body))
+		}
+		fip = &resp.JSON201.FloatingIp
+		klog.Infof("created floating IP %q (%s)", name, fip.Id)
+	} else {
+		klog.Infof("reusing existing floating IP %q (%s)", name, fip.Id)
+	}
+
+	for fip.Status != sagadata.FloatingIpStatusCreated {
+		if fip.Status == sagadata.FloatingIpStatusError {
+			return "", fmt.Errorf("floating IP %q (%s) is in error state", name, fip.Id)
+		}
+		klog.Infof("waiting for floating IP %q (%s) status=%s", name, fip.Id, fip.Status)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+		resp, err := lb.client.GetFloatingIPWithResponse(ctx, fip.Id)
+		if err != nil {
+			return "", fmt.Errorf("failed to get floating IP %q: %w", name, err)
+		}
+		if resp.JSON200 == nil {
+			return "", fmt.Errorf("unexpected response getting floating IP %q: %s", name, resp.HTTPResponse.Status)
+		}
+		fip = &resp.JSON200.FloatingIp
+	}
+
+	return fip.Id, nil
+}
+
 // GetLoadBalancer returns the status of the load balancer for the given service,
 // or (nil, false, nil) if no matching LB exists.
 func (lb *loadBalancers) GetLoadBalancer(ctx context.Context, clusterName string, svc *v1.Service) (*v1.LoadBalancerStatus, bool, error) {
@@ -142,8 +231,12 @@ func (lb *loadBalancers) EnsureLoadBalancer(ctx context.Context, clusterName str
 			Network: lb.network,
 			Ports:   ports,
 		}
-		if floatingIp, ok := svc.Annotations[AnnotationLoadBalancerFloatingIp]; ok {
-			createBody.FloatingIpId = &floatingIp
+		floatingIpId, err := lb.ensureFloatingIP(ctx, svc)
+		if err != nil {
+			return nil, err
+		}
+		if floatingIpId != "" {
+			createBody.FloatingIpId = &floatingIpId
 		}
 		if bodyJSON, err := json.Marshal(createBody); err == nil {
 			klog.Infof("creating load balancer %q, request body: %s", name, string(bodyJSON))
